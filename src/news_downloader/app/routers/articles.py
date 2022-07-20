@@ -14,6 +14,30 @@ task_key = 'news_downloader:news_tasks'
 articles_key = 'news_downloader:articles'
 
 
+@router.get("/article_tasks/", tags=["articles"])
+async def push_article(request: Request, article_url: str):
+    """
+    GET 直接传入url, 方便快速提交任务, 
+    从redis判断任务是否存在, 如果存在, 直接返回html
+    """
+    article = {'url': article_url}
+    article["article_id"] = str_2_md5(article_url)
+    if await request.app.state.redis.hget(articles_key, article["article_id"]) is None:
+        # 爬取文章
+        response_status, response_text = await crawl_articles(article)
+        res_data = article.dict().copy()
+        res_data['res_status_code'] = response_status
+        res_data['res_text'] = response_text
+        await request.app.state.redis.hset(articles_key, article.article_id, json.dumps(res_data))
+    res_data = json.loads(await request.app.state.redis.hget(articles_key, article["article_id"]))
+    data = {
+        'content': '请求成功, 通过show_url预览网页, 通过post请求获取全部信息',
+        'show_url': '{}articles/{}'.format(request.base_url, article["article_id"]),
+        # 'res_data': res_data,
+    }
+    return resp_200(data=data)
+
+
 @router.post("/article_tasks/", tags=["articles"])
 async def push_article(request: Request, article: ArticleTask):
     """
@@ -30,7 +54,6 @@ async def push_article(request: Request, article: ArticleTask):
     if await request.app.state.redis.hget(articles_key, article.article_id) is None:
         # 爬取文章
         response_status, response_text = await crawl_articles(article.dict())
-        print(response_status, response_text)
         res_data = article.dict().copy()
         res_data['res_status_code'] = response_status
         res_data['res_text'] = response_text
@@ -38,7 +61,7 @@ async def push_article(request: Request, article: ArticleTask):
     res_data = json.loads(await request.app.state.redis.hget(articles_key, article.article_id))
     data = {
         'content': '请求成功, 通过show_url预览网页, 通过post请求获取全部信息',
-        'show_url': 'http://localhost:8000/articles/{}'.format(article.article_id),
+        'show_url': '{}articles/{}'.format(request.base_url, article.article_id),
         # 'res_data': res_data,
     }
     return resp_200(data=data)
